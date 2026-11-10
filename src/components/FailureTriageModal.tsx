@@ -258,33 +258,14 @@ export function FailureTriageModal({
             </div>
           </div>
 
-          {/* Quick Nav to Merchant Backend */}
-          <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-950/40 to-indigo-950/40 border border-blue-500/30 flex flex-col sm:flex-row items-center justify-between gap-3">
+          {/* Customer Protection Notice */}
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-950/40 to-indigo-950/40 border border-blue-500/30 flex items-center gap-3">
+            <ShieldCheck className="w-5 h-5 text-blue-400 shrink-0" />
             <div className="text-xs">
-              <span className="font-bold text-white block">View this in the Merchant Dashboard</span>
+              <span className="font-bold text-white block">Protected Checkout Guarantee</span>
               <span className="text-gray-400 text-[11px]">
-                Inspect the live AG Grid events, policy approvals inbox, and audit logs.
+                Your transaction details are encrypted and securely verified. You can retry with an alternate card or contact your card issuer.
               </span>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <a
-                href="http://localhost:3000/events"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-md shadow-blue-600/20 transition-all"
-              >
-                <span>Live Events</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
-              <a
-                href="http://localhost:3000/approvals"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-3 py-1.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 hover:text-white font-semibold text-xs flex items-center gap-1.5 border border-gray-700 transition-all"
-              >
-                <span>Approvals</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
             </div>
           </div>
         </div>

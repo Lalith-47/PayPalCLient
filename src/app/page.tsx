@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Header } from "@/components/Header";
 import { ProductCard } from "@/components/ProductCard";
 import { NotesPreviewModal } from "@/components/NotesPreviewModal";
@@ -32,14 +32,15 @@ import {
 export default function HomePage() {
   const [currentView, setCurrentView] = useState<"store" | "vault">("store");
   const [activeCategory, setActiveCategory] = useState<"all" | "essentials" | "subscription_notes">("all");
+  const [productsList, setProductsList] = useState<Product[]>(PRODUCTS);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [previewProduct, setPreviewProduct] = useState<Product | null>(null);
   const [cartToast, setCartToast] = useState<string | null>(null);
   const [refundingItemId, setRefundingItemId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string>("default_student_session");
 
-  // Student Owned Items & Subscriptions
-  // Seeded with representative examples so the user can immediately demonstrate both policy paths!
+  // Initial student owned items & subscriptions
   const [ownedItems, setOwnedItems] = useState<OwnedItem[]>([
     {
       id: "own-cs-vault-sample",
@@ -75,7 +76,7 @@ export default function HomePage() {
   const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false);
   const [loadingPayment, setLoadingPayment] = useState(false);
 
-  // Status banners & modals
+  // Status banners & alerts
   const [successDetails, setSuccessDetails] = useState<{
     orderId?: string;
     captureId?: string;
@@ -93,60 +94,164 @@ export default function HomePage() {
 
   const [cancellationNotice, setCancellationNotice] = useState<string | null>(null);
 
+  // Initialize Session & Neon DB Data Fetching
+  useEffect(() => {
+    // 1. Resolve or create persistent session ID
+    let currentSid = "session_student_default";
+    try {
+      const stored = localStorage.getItem("campusvault_student_session_id");
+      if (stored) {
+        currentSid = stored;
+      } else {
+        currentSid = `sid_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        localStorage.setItem("campusvault_student_session_id", currentSid);
+      }
+    } catch {
+      // fallback in SSR or restricted environments
+    }
+    setSessionId(currentSid);
+
+    // 2. Early DB Warmup: Awaken Neon Serverless compute instance
+    fetch("/api/warmup")
+      .then((res) => res.json())
+      .catch((err) => console.log("[Warmup Ping Note]", err.message));
+
+    // 3. Load catalog products from Neon DB
+    fetch("/api/products")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.products && Array.isArray(data.products) && data.products.length > 0) {
+          setProductsList(data.products);
+        }
+      })
+      .catch((err) => console.warn("[Products Fetch]", err));
+
+    // 4. Load persisted cart items for this student session
+    fetch(`/api/cart?sessionId=${currentSid}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.items && Array.isArray(data.items) && data.items.length > 0) {
+          setCart(data.items);
+        }
+      })
+      .catch((err) => console.warn("[Cart Fetch]", err));
+
+    // 5. Load persisted order history for this student session
+    fetch(`/api/orders?sessionId=${currentSid}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.orders && Array.isArray(data.orders) && data.orders.length > 0) {
+          setOwnedItems((prev) => {
+            const combined = [...data.orders];
+            // keep default samples if none exist
+            for (const item of prev) {
+              if (!combined.some((c) => c.id === item.id)) {
+                combined.push(item);
+              }
+            }
+            return combined;
+          });
+        }
+      })
+      .catch((err) => console.warn("[Orders Fetch]", err));
+  }, []);
+
   // Cart operations: Just adds to cart without opening drawer
   const handleAddToCart = (product: Product) => {
     setCart((prev) => {
       const existing = prev.find((item) => item.product.id === product.id);
       if (existing) {
         return prev.map((item) =>
-          item.product.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
+          item.product.id === product.id
+            ? { ...item, quantity: item.quantity + 1 }
+            : item
         );
       }
       return [...prev, { product, quantity: 1 }];
     });
 
-    setCartToast(`Added "${product.name}" to cart`);
-    setTimeout(() => {
-      setCartToast(null);
-    }, 2500);
+    // Persist to Neon DB
+    fetch("/api/cart", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId,
+        productId: product.id,
+        delta: 1,
+      }),
+    }).catch((err) => console.warn("[Cart Add Sync]", err));
+
+    // Show non-disruptive confirmation badge
+    setCartToast(`Added ${product.name} to cart!`);
+    setTimeout(() => setCartToast(null), 2500);
   };
 
   const handleUpdateQuantity = (productId: string, quantity: number) => {
     if (quantity <= 0) {
-      handleRemoveItem(productId);
+      handleRemoveFromCart(productId);
       return;
     }
     setCart((prev) =>
-      prev.map((item) => (item.product.id === productId ? { ...item, quantity } : item))
+      prev.map((item) =>
+        item.product.id === productId ? { ...item, quantity } : item
+      )
     );
+
+    // Persist quantity to Neon DB
+    fetch("/api/cart", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId,
+        productId,
+        quantity,
+      }),
+    }).catch((err) => console.warn("[Cart Qty Sync]", err));
   };
 
-  const handleRemoveItem = (productId: string) => {
+  const handleRemoveFromCart = (productId: string) => {
     setCart((prev) => prev.filter((item) => item.product.id !== productId));
+
+    // Delete from Neon DB
+    fetch(`/api/cart?sessionId=${sessionId}&productId=${productId}`, {
+      method: "DELETE",
+    }).catch((err) => console.warn("[Cart Remove Sync]", err));
   };
 
-  // Step 1: Open Payment -> Generates official PayPal Invoice from payment.lalithdev.tech
-  const handleOpenPayment = async () => {
+  // Step 1: Open checkout -> creates official invoice via payment.lalithdev.tech
+  const handleProceedToInvoice = async () => {
     if (cart.length === 0) return;
+
     setIsGeneratingInvoice(true);
     setCancellationNotice(null);
-    setSuccessDetails(null);
+    setDeclineDetails(null);
+
+    const totalAmount = cart.reduce(
+      (sum, item) => sum + item.product.price * item.quantity,
+      0
+    );
 
     try {
       const res = await fetch("/api/invoices/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          items: cart,
           customer,
+          amount: parseFloat(totalAmount.toFixed(2)),
           currency: "USD",
           dueDays: 15,
+          note: `CampusVault Order for ${customer.name} (${customer.studentId})`,
+          lineItems: cart.map((ci) => ({
+            description: `${ci.product.name} (CampusVault)`,
+            quantity: ci.quantity,
+            unitPrice: ci.product.price,
+          })),
         }),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to generate invoice from payment.lalithdev.tech");
+        throw new Error(data.error || "Failed to generate official invoice");
       }
 
       setCurrentInvoice(data.invoice);
@@ -181,6 +286,29 @@ export default function HomePage() {
       invoiceNumber: currentInvoice.invoiceNumber,
       message: `Invoice #${currentInvoice.invoiceNumber} settled via PayPal. Purchased items are now accessible in your Owned Vault!`,
     });
+
+    // Persist new orders to Neon DB
+    fetch("/api/orders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId,
+        orderId: currentInvoice.orderId || `ORD_${Date.now()}`,
+        invoiceId: currentInvoice.invoiceId,
+        invoiceNumber: currentInvoice.invoiceNumber,
+        customerName: customer.name,
+        customerEmail: customer.email,
+        items: cart.map((ci) => ({
+          productId: ci.product.id,
+          amountPaid: ci.product.price * ci.quantity,
+        })),
+      }),
+    }).catch((err) => console.warn("[Orders Persist Sync]", err));
+
+    // Clear cart in Neon DB
+    fetch(`/api/cart?sessionId=${sessionId}`, {
+      method: "DELETE",
+    }).catch((err) => console.warn("[Cart Clear Sync]", err));
 
     setCart([]);
     setCurrentView("vault");
@@ -232,7 +360,7 @@ export default function HomePage() {
     );
   };
 
-  // Step 3: Cancellation & Refund Flow based on Policy in ~/Projects/PayPal
+  // Step 3: Cancellation & Refund Flow
   const handleCancelAndRefund = async (item: OwnedItem, reason: string) => {
     setRefundingItemId(item.id);
     try {
@@ -241,6 +369,7 @@ export default function HomePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           orderId: item.orderId,
+          itemId: item.id,
           captureId: item.captureId || item.orderId,
           amount: item.amountPaid,
           currency: "USD",
@@ -256,7 +385,6 @@ export default function HomePage() {
       }
 
       if (data.decision === "AUTO") {
-        // Under $25 ceiling -> Auto Refunded!
         setOwnedItems((prev) =>
           prev.map((i) =>
             i.id === item.id
@@ -271,10 +399,9 @@ export default function HomePage() {
           )
         );
         setSuccessDetails({
-          message: `Cancellation Approved: Refund of $${item.amountPaid.toFixed(2)} was automatically processed (under $25 policy ceiling)!`,
+          message: `Cancellation Approved: Refund of $${item.amountPaid.toFixed(2)} has been processed and credited to your original payment method.`,
         });
       } else {
-        // Over $25 ceiling -> Raised Approval in Approvals Inbox!
         setOwnedItems((prev) =>
           prev.map((i) =>
             i.id === item.id
@@ -289,7 +416,7 @@ export default function HomePage() {
           )
         );
         setCancellationNotice(
-          `Refund of $${item.amountPaid.toFixed(2)} exceeds the $25 policy ceiling. Approval request raised in Approvals Inbox on payment.lalithdev.tech!`
+          `Return Request Submitted: Your refund request of $${item.amountPaid.toFixed(2)} has been submitted. Our team is reviewing it and will update your status.`
         );
       }
     } catch (err) {
@@ -301,14 +428,22 @@ export default function HomePage() {
 
   const filteredProducts =
     activeCategory === "all"
-      ? PRODUCTS
-      : PRODUCTS.filter((p) => p.category === activeCategory);
+      ? productsList
+      : productsList.filter((p) => p.category === activeCategory);
 
   const cartTotalCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col">
-      {/* Header */}
+      {/* Toast Notification */}
+      {cartToast && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-2xl bg-emerald-950/90 border border-emerald-500/40 text-emerald-200 shadow-2xl backdrop-blur-md animate-slide-up">
+          <CheckCircle className="w-5 h-5 text-emerald-400" />
+          <span className="text-xs font-semibold">{cartToast}</span>
+        </div>
+      )}
+
+      {/* Main Header */}
       <Header
         cartCount={cartTotalCount}
         ownedCount={ownedItems.filter((i) => i.status === "ACTIVE").length}
@@ -319,58 +454,39 @@ export default function HomePage() {
         onSelectCategory={setActiveCategory}
       />
 
-      {/* Floating Add-to-Cart Toast */}
-      {cartToast && (
-        <div className="fixed bottom-6 right-6 z-50 p-4 rounded-2xl glass-card border border-blue-500/40 text-white text-xs flex items-center gap-3 shadow-2xl animate-fade-in">
-          <div className="w-8 h-8 rounded-xl bg-blue-600/30 text-blue-400 flex items-center justify-center shrink-0">
-            <CheckCircle2 className="w-4 h-4" />
-          </div>
-          <div>
-            <p className="font-semibold text-white">{cartToast}</p>
-            <p className="text-[11px] text-gray-400">
-              Cart updated ({cartTotalCount} {cartTotalCount === 1 ? "item" : "items"}). Open cart when ready.
-            </p>
-          </div>
-          <button
-            onClick={() => setIsCartOpen(true)}
-            className="ml-2 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md shadow-blue-600/20"
-          >
-            View Cart
-          </button>
-        </div>
-      )}
-
-      {/* Main Content */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-10">
+      {/* Main Content Area */}
+      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full space-y-8">
         {/* Success Banner */}
         {successDetails && (
-          <div className="p-5 rounded-3xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-200 flex items-center justify-between gap-4 animate-scale-in">
-            <div className="flex items-center gap-3">
-              <CheckCircle className="w-6 h-6 text-emerald-400 shrink-0" />
-              <div>
-                <h4 className="font-bold text-white text-sm">Action Successful!</h4>
-                <p className="text-xs text-emerald-300">{successDetails.message}</p>
-                {successDetails.captureId && (
-                  <span className="text-[11px] font-mono text-emerald-400">
-                    Capture ID: {successDetails.captureId}
-                  </span>
+          <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-emerald-950/60 to-emerald-900/40 border border-emerald-500/40 text-emerald-100 flex items-start justify-between gap-4 animate-slide-down">
+            <div className="flex items-start gap-3.5">
+              <div className="p-2 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="font-bold text-white text-sm">Action Confirmed</h4>
+                <p className="text-xs text-emerald-200">{successDetails.message}</p>
+                {successDetails.orderId && (
+                  <p className="text-[11px] font-mono text-emerald-400">
+                    Order Ref: {successDetails.orderId}
+                  </p>
                 )}
               </div>
             </div>
             <button
               onClick={() => setSuccessDetails(null)}
-              className="px-3 py-1.5 rounded-xl bg-emerald-900/60 hover:bg-emerald-800 text-xs text-white font-semibold"
+              className="text-emerald-400 hover:text-white p-1"
             >
-              Dismiss
+              <XCircle className="w-5 h-5" />
             </button>
           </div>
         )}
 
         {/* Cancellation Notice Banner */}
         {cancellationNotice && (
-          <div className="p-5 rounded-3xl bg-gray-900 border border-gray-700 text-gray-300 flex items-center justify-between gap-4 animate-scale-in">
-            <div className="flex items-center gap-3">
-              <XCircle className="w-6 h-6 text-amber-400 shrink-0" />
+          <div className="p-4 rounded-2xl bg-gray-900/80 border border-gray-800 text-gray-300 flex items-start justify-between gap-4 animate-fade-in">
+            <div className="flex items-start gap-3">
+              <Clock className="w-5 h-5 text-amber-400 mt-0.5 shrink-0" />
               <div>
                 <h4 className="font-bold text-white text-sm">Payment Cancelled</h4>
                 <p className="text-xs text-gray-300">{cancellationNotice}</p>
@@ -378,176 +494,91 @@ export default function HomePage() {
             </div>
             <button
               onClick={() => setCancellationNotice(null)}
-              className="px-3 py-1.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-xs text-white font-semibold"
+              className="text-gray-400 hover:text-white"
             >
-              Dismiss
+              <XCircle className="w-4 h-4" />
             </button>
           </div>
         )}
 
-        {/* VIEW 1: MY VAULT & SUBSCRIPTIONS */}
-        {currentView === "vault" ? (
+        {/* Dynamic View: Store Catalog or My Vault */}
+        {currentView === "store" ? (
+          <div className="space-y-8">
+            {/* Hero Banner */}
+            <div className="relative overflow-hidden rounded-3xl glass-card border border-gray-800 p-8 sm:p-10 bg-gradient-to-br from-blue-950/30 via-gray-950 to-indigo-950/40">
+              <div className="relative z-10 max-w-2xl space-y-4">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-semibold">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>College Term Academic Store & Subscriptions</span>
+                </div>
+                <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black text-white tracking-tight leading-tight">
+                  Essential College Gear & Academic Study Vaults.
+                </h1>
+                <p className="text-sm sm:text-base text-gray-300 leading-relaxed">
+                  Equip yourself with verified physical college equipment and unlock high-yield course lecture notes
+                  on subscription passes with instant access.
+                </p>
+                <div className="flex flex-wrap items-center gap-4 pt-2">
+                  <button
+                    onClick={() => setActiveCategory("subscription_notes")}
+                    className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-blue-600/30 flex items-center gap-2 transition-all active:scale-95"
+                  >
+                    <BookOpen className="w-4 h-4" />
+                    <span>Explore Study Notes Passes</span>
+                  </button>
+                  <button
+                    onClick={() => setActiveCategory("essentials")}
+                    className="px-5 py-2.5 rounded-2xl bg-gray-900/80 hover:bg-gray-800 border border-gray-800 text-gray-300 text-xs font-semibold flex items-center gap-2 transition-all"
+                  >
+                    <Layers className="w-4 h-4" />
+                    <span>Physical College Gear</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Product Catalog Grid */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-black text-white">
+                    {activeCategory === "all"
+                      ? "All College Products & Passes"
+                      : activeCategory === "essentials"
+                      ? "College Hardware & Supplies"
+                      : "Academic Notes Subscription Passes"}
+                  </h2>
+                  <p className="text-xs text-gray-400">
+                    Showing {filteredProducts.length} verified item(s) ready for checkout
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredProducts.map((product) => (
+                  <ProductCard
+                    key={product.id}
+                    product={product}
+                    onAddToCart={handleAddToCart}
+                    onPreviewNotes={setPreviewProduct}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : (
           <MyVaultSection
             ownedItems={ownedItems}
             onCancelAndRefund={handleCancelAndRefund}
-            onReadNotes={(p) => setPreviewProduct(p)}
-            onExploreStore={() => setCurrentView("store")}
+            onReadNotes={(product) => setPreviewProduct(product)}
+            onExploreStore={() => {
+              setCurrentView("store");
+              setActiveCategory("all");
+            }}
             refundingItemId={refundingItemId}
           />
-        ) : (
-          /* VIEW 2: STORE CATALOG */
-          <>
-            {/* Hero Section */}
-            <section className="relative rounded-3xl overflow-hidden glass-card p-8 sm:p-12 border border-gray-800">
-              <div className="absolute top-0 right-0 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
-              <div className="absolute bottom-0 left-0 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl pointer-events-none" />
-
-              <div className="relative max-w-3xl space-y-5">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-semibold">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Campus Semester Supplies & Notes Pass</span>
-                </div>
-
-                <h1 className="text-3xl sm:text-5xl font-black text-white tracking-tight leading-tight">
-                  College Supplies & Notes. <br />
-                  <span className="gradient-text">Instant Invoice & Auto-Refund.</span>
-                </h1>
-
-                <p className="text-gray-300 text-sm sm:text-base leading-relaxed">
-                  Add items to cart at your pace. Click checkout to generate an official invoice from{" "}
-                  <code className="text-blue-400 bg-gray-900 px-1.5 py-0.5 rounded font-mono">
-                    payment.lalithdev.tech
-                  </code>
-                  . Once paid, items are stored in your <strong>Owned Vault</strong>, where you can test
-                  policy cancellations and auto-refunds under the $25 limit or approvals over $25.
-                </p>
-
-                <div className="flex flex-wrap items-center gap-3 pt-2">
-                  <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-gray-900 border border-gray-800 text-xs text-gray-300">
-                    <FileText className="w-4 h-4 text-blue-400" />
-                    <span>Auto-Invoice via payment.lalithdev.tech</span>
-                  </div>
-                  <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-gray-900 border border-gray-800 text-xs text-gray-300">
-                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                    <span>Auto-Refund Ceiling: $25.00</span>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            {/* Section Filters */}
-            <div className="flex items-center justify-between border-b border-gray-800 pb-4">
-              <div className="flex items-center gap-2">
-                <h2 className="text-xl font-bold text-white">
-                  {activeCategory === "all"
-                    ? "All Campus Items"
-                    : activeCategory === "essentials"
-                    ? "College Supplies & Lab Equipment"
-                    : "Student Academic Notes Subscriptions"}
-                </h2>
-                <span className="text-xs text-gray-500 font-mono">
-                  ({filteredProducts.length} items)
-                </span>
-              </div>
-
-              <div className="flex items-center gap-1 text-xs">
-                <button
-                  onClick={() => setActiveCategory("all")}
-                  className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${
-                    activeCategory === "all"
-                      ? "bg-gray-800 text-white"
-                      : "text-gray-400 hover:text-white"
-                  }`}
-                >
-                  All
-                </button>
-                <button
-                  onClick={() => setActiveCategory("essentials")}
-                  className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${
-                    activeCategory === "essentials"
-                      ? "bg-gray-800 text-white"
-                      : "text-gray-400 hover:text-white"
-                  }`}
-                >
-                  Supplies
-                </button>
-                <button
-                  onClick={() => setActiveCategory("subscription_notes")}
-                  className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${
-                    activeCategory === "subscription_notes"
-                      ? "bg-purple-900/50 text-purple-300"
-                      : "text-gray-400 hover:text-white"
-                  }`}
-                >
-                  Subscriptions
-                </button>
-              </div>
-            </div>
-
-            {/* Products Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredProducts.map((product) => (
-                <ProductCard
-                  key={product.id}
-                  product={product}
-                  onAddToCart={handleAddToCart}
-                  onPreviewNotes={(p) => setPreviewProduct(p)}
-                />
-              ))}
-            </div>
-          </>
         )}
       </main>
-
-      {/* Footer */}
-      <footer className="mt-20 border-t border-gray-800/80 bg-gray-950 py-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-gray-500">
-          <div className="flex items-center gap-2 text-gray-400">
-            <GraduationCap className="w-4 h-4 text-blue-400" />
-            <span className="font-semibold text-white">CampusVault Student Store</span>
-            <span>•</span>
-            <span>Invoicing & Refund Bridge via payment.lalithdev.tech</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <a
-              href="http://localhost:3000"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-blue-400 flex items-center gap-1 transition-colors"
-            >
-              <span>Revenue Guardian Manager</span>
-              <ExternalLink className="w-3 h-3" />
-            </a>
-            <a
-              href="http://localhost:3000/approvals"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-amber-400 flex items-center gap-1 transition-colors"
-            >
-              <span>Approvals Inbox</span>
-              <ExternalLink className="w-3 h-3" />
-            </a>
-            <a
-              href="http://localhost:3000/invoices"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-blue-400 flex items-center gap-1 transition-colors"
-            >
-              <span>Invoices</span>
-              <ExternalLink className="w-3 h-3" />
-            </a>
-            <a
-              href="http://localhost:3000/events"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-blue-400 flex items-center gap-1 transition-colors"
-            >
-              <span>Live Events</span>
-              <ExternalLink className="w-3 h-3" />
-            </a>
-          </div>
-        </div>
-      </footer>
 
       {/* Cart Drawer */}
       <CartDrawer
@@ -555,25 +586,12 @@ export default function HomePage() {
         onClose={() => setIsCartOpen(false)}
         items={cart}
         onUpdateQuantity={handleUpdateQuantity}
-        onRemoveItem={handleRemoveItem}
-        onProceedToCheckout={handleOpenPayment}
+        onRemoveItem={handleRemoveFromCart}
+        onProceedToCheckout={handleProceedToInvoice}
+        isGeneratingInvoice={isGeneratingInvoice}
       />
 
-      {/* Loading Overlay while generating invoice */}
-      {isGeneratingInvoice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-          <div className="p-8 rounded-3xl glass-card border border-blue-500/30 text-center space-y-4 max-w-sm">
-            <Loader2 className="w-10 h-10 text-blue-500 animate-spin mx-auto" />
-            <h3 className="text-base font-bold text-white">Generating PayPal Invoice</h3>
-            <p className="text-xs text-gray-400">
-              Connecting to <span className="text-blue-400 font-mono">payment.lalithdev.tech</span> to
-              create your invoice...
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* The Invoice Viewer & Decision Modal: Strictly Pay Now or Cancel */}
+      {/* Official PayPal Sandbox Invoice Viewer Modal */}
       <InvoiceViewerModal
         isOpen={isInvoiceModalOpen}
         onClose={() => setIsInvoiceModalOpen(false)}
@@ -584,20 +602,29 @@ export default function HomePage() {
         loadingPayment={loadingPayment}
       />
 
-      {/* Notes Preview Modal */}
+      {/* Revenue Guardian Autonomous Failure Recovery Modal */}
+      <FailureTriageModal
+        isOpen={!!declineDetails}
+        onClose={() => setDeclineDetails(null)}
+        declineData={declineDetails}
+      />
+
+      {/* Notes Curriculum Preview Modal */}
       <NotesPreviewModal
         product={previewProduct}
         onClose={() => setPreviewProduct(null)}
         onAddToCart={handleAddToCart}
       />
 
-      {/* Payment Decline Triage Modal */}
-      <FailureTriageModal
-        isOpen={Boolean(declineDetails)}
-        onClose={() => setDeclineDetails(null)}
-        declineData={declineDetails}
-        onRetryPayment={() => setIsInvoiceModalOpen(true)}
-      />
+      {/* Footer */}
+      <footer className="border-t border-gray-900 bg-gray-950 py-8 mt-12 text-center text-xs text-gray-500">
+        <div className="max-w-7xl mx-auto px-4 space-y-2">
+          <p>© 2026 CampusVault Inc. Secure PayPal Checkout & Subscriptions.</p>
+          <p className="text-[11px] text-gray-600">
+            Official Academic Study Pass & Equipment Store for College Students.
+          </p>
+        </div>
+      </footer>
     </div>
   );
 }

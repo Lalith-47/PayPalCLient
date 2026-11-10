@@ -65,7 +65,7 @@ export function MyVaultSection({
             </h2>
             <p className="text-xs sm:text-sm text-gray-300 mt-1 max-w-xl">
               Access your full study vaults, lecture cheat sheets, and physical campus supplies.
-              Manage cancellations and deterministic store policy refunds below.
+              View your owned materials or submit return requests below.
             </p>
           </div>
         </div>
@@ -73,13 +73,13 @@ export function MyVaultSection({
         <div className="p-4 rounded-2xl bg-gray-950/80 border border-gray-800 text-xs space-y-1.5 shrink-0">
           <span className="font-bold text-gray-300 flex items-center gap-1.5">
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span>Store Policy Guardrails</span>
+            <span>Student Purchase Guarantee</span>
           </span>
           <p className="text-gray-400 text-[11px]">
-            • Auto-Refund Ceiling: <strong className="text-emerald-400">$25.00 USD</strong>
+            • 30-day money-back guarantee on all courses
           </p>
           <p className="text-gray-400 text-[11px]">
-            • Above $25.00: <span className="text-amber-400">Routes to Approvals Inbox</span>
+            • Verified settlement & fast return processing
           </p>
         </div>
       </div>
@@ -178,34 +178,23 @@ export function MyVaultSection({
                   <div className="p-3.5 rounded-2xl bg-purple-950/40 border border-purple-500/30 text-xs text-purple-200 space-y-1">
                     <div className="flex items-center gap-2 font-bold text-purple-300">
                       <CheckCircle2 className="w-4 h-4 text-purple-400" />
-                      <span>Auto-Refund Approved & Settled</span>
+                      <span>Refund Approved & Settled</span>
                     </div>
                     <p className="text-[11px] text-gray-300">
-                      Refund of ${item.amountPaid.toFixed(2)} was within the store auto-refund limit ($25.00).
-                      Evaluated and credited automatically by Revenue Guardian.
+                      Refund of ${item.amountPaid.toFixed(2)} was successfully processed and credited to your original payment method.
                     </p>
                   </div>
                 )}
 
                 {item.status === "AWAITING_APPROVAL" && (
-                  <div className="p-3.5 rounded-2xl bg-amber-950/40 border border-amber-500/30 text-xs text-amber-200 space-y-2">
+                  <div className="p-3.5 rounded-2xl bg-amber-950/40 border border-amber-500/30 text-xs text-amber-200 space-y-1.5">
                     <div className="flex items-center gap-2 font-bold text-amber-300">
                       <Clock className="w-4 h-4 text-amber-400" />
-                      <span>Pending Merchant Approval (Over $25 Limit)</span>
+                      <span>Pending Merchant Approval</span>
                     </div>
                     <p className="text-[11px] text-gray-300">
-                      Refund of <strong>${item.amountPaid.toFixed(2)}</strong> exceeds the $25.00 auto-refund
-                      policy limit. A cryptographic approval request was raised in the merchant Approvals Inbox.
+                      Your return request of <strong>${item.amountPaid.toFixed(2)}</strong> has been submitted. Our support team is currently reviewing it and will notify you once processed.
                     </p>
-                    <a
-                      href="http://localhost:3000/approvals"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 font-semibold text-xs transition-colors"
-                    >
-                      <span>Inspect in Approvals Inbox</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
                   </div>
                 )}
 
@@ -279,20 +268,11 @@ export function MyVaultSection({
                 </span>
               </div>
               <div className="flex justify-between text-gray-400">
-                <span>Store Policy Limit:</span>
-                <span className="text-emerald-400 font-semibold">$25.00 (Auto-Ceiling)</span>
+                <span>Credit Method:</span>
+                <span className="text-emerald-400 font-semibold">Original PayPal Account</span>
               </div>
               <p className="pt-2 border-t border-gray-800 text-[11px] text-gray-400">
-                {selectedItemToRefund.amountPaid <= 25 ? (
-                  <span className="text-emerald-300">
-                    ⚡ Amount is within the $25 limit. Revenue Guardian will auto-refund immediately!
-                  </span>
-                ) : (
-                  <span className="text-amber-300">
-                    ⚠️ Amount exceeds $25.00 limit. This will generate an approval request in the merchant
-                    Approvals Inbox (payment.lalithdev.tech/approvals).
-                  </span>
-                )}
+                Returns are evaluated and credited back to your original payment method. You will receive an immediate confirmation once submitted.
               </p>
             </div>
 

@@ -120,20 +120,6 @@ export function Header({
 
           {/* Right Controls */}
           <div className="flex items-center gap-3">
-            {/* Revenue Guardian Approvals & Portal Link */}
-            <a
-              href="http://localhost:3000/approvals"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium bg-gray-900 border border-gray-800 text-gray-300 hover:text-white hover:border-amber-500/50 transition-all group"
-              title="Inspect Approvals Inbox on payment.lalithdev.tech"
-            >
-              <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-              <ShieldCheck className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
-              <span>Approvals Inbox</span>
-              <ExternalLink className="w-3 h-3 text-gray-500 group-hover:text-amber-400" />
-            </a>
-
             {/* Cart Button */}
             <button
               onClick={onOpenCart}

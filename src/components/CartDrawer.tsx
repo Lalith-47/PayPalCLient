@@ -11,6 +11,7 @@ interface CartDrawerProps {
   onUpdateQuantity: (productId: string, quantity: number) => void;
   onRemoveItem: (productId: string) => void;
   onProceedToCheckout: () => void;
+  isGeneratingInvoice?: boolean;
 }
 
 export function CartDrawer({
@@ -20,6 +21,7 @@ export function CartDrawer({
   onUpdateQuantity,
   onRemoveItem,
   onProceedToCheckout,
+  isGeneratingInvoice = false,
 }: CartDrawerProps) {
   if (!isOpen) return null;
 
@@ -153,10 +155,20 @@ export function CartDrawer({
 
             <button
               onClick={onProceedToCheckout}
-              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-600/25 active:scale-95 transition-all"
+              disabled={isGeneratingInvoice}
+              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-50 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-600/25 active:scale-95 transition-all"
             >
-              <span>Proceed to Checkout</span>
-              <ArrowRight className="w-4 h-4" />
+              {isGeneratingInvoice ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>Generating PayPal Invoice...</span>
+                </>
+              ) : (
+                <>
+                  <span>Proceed to Checkout</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </button>
           </div>
         )}

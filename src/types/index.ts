@@ -1,5 +1,7 @@
 export type ProductCategory = "essentials" | "subscription_notes";
 
+export type BillingInterval = "monthly" | "month" | "semester" | "weekly" | "one_time";
+
 export interface SampleNote {
   title: string;
   subject: string;
@@ -14,7 +16,7 @@ export interface Product {
   name: string;
   category: ProductCategory;
   price: number;
-  billingInterval?: "monthly" | "semester" | "weekly" | "one_time";
+  billingInterval?: BillingInterval;
   description: string;
   badge?: string;
   features: string[];
