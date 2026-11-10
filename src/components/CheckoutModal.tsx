@@ -91,7 +91,9 @@ export function CheckoutModal({
   };
 
   // Step 2: Capture or Simulate Failure
-  const handleExecutePayment = async (mockCode?: "INSTRUMENT_DECLINED" | "TRANSACTION_REFUSED" | "NONE") => {
+  const handleExecutePayment = async (
+    mockCode?: "INSTRUMENT_DECLINED" | "TRANSACTION_REFUSED" | "SIMULATE_SUCCESS" | "NONE"
+  ) => {
     if (!createdOrder) return;
     setLoading(true);
     setErrorMsg(null);
@@ -351,11 +353,33 @@ export function CheckoutModal({
                         <span>Execute Standard Capture (SUCCESS)</span>
                       </div>
                       <p className="text-[11px] text-gray-400 mt-1">
-                        Completes order capture normally without mock headers.
+                        Completes order capture via live PayPal Sandbox authorization.
                       </p>
                     </div>
                     <span className="text-xs text-emerald-400 font-bold ml-2 shrink-0 group-hover:translate-x-0.5 transition-transform">
                       Capture →
+                    </span>
+                  </button>
+
+                  {/* Scenario 4: Instant Settle & Unlock Vault */}
+                  <button
+                    type="button"
+                    id="btn-instant-settle-vault"
+                    disabled={loading}
+                    onClick={() => handleExecutePayment("SIMULATE_SUCCESS")}
+                    className="w-full p-3.5 rounded-xl bg-blue-950/40 hover:bg-blue-900/50 border border-blue-500/40 text-left transition-all group flex items-start justify-between disabled:opacity-50"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2 text-blue-300 font-bold text-xs group-hover:text-blue-200">
+                        <Sparkles className="w-4 h-4 text-blue-400" />
+                        <span>Instant Settle & Unlock Vault (Fast Demo)</span>
+                      </div>
+                      <p className="text-[11px] text-gray-400 mt-1">
+                        Instantly captures payment, confirms entitlement ownership, and unlocks the items into your Student Vault.
+                      </p>
+                    </div>
+                    <span className="text-xs text-blue-400 font-bold ml-2 shrink-0 group-hover:translate-x-0.5 transition-transform">
+                      Settle →
                     </span>
                   </button>
                 </div>

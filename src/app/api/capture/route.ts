@@ -5,7 +5,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as {
       orderId: string;
-      mockCode?: "INSTRUMENT_DECLINED" | "TRANSACTION_REFUSED" | "NONE";
+      mockCode?: "INSTRUMENT_DECLINED" | "TRANSACTION_REFUSED" | "SIMULATE_SUCCESS" | "NONE";
     };
 
     if (!body.orderId) {

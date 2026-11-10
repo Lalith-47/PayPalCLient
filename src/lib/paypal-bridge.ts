@@ -185,7 +185,7 @@ export async function createPayPalOrder(params: {
  */
 export async function capturePayPalOrder(params: {
   orderId: string;
-  mockCode?: "INSTRUMENT_DECLINED" | "TRANSACTION_REFUSED" | "NONE";
+  mockCode?: "INSTRUMENT_DECLINED" | "TRANSACTION_REFUSED" | "SIMULATE_SUCCESS" | "NONE";
 }) {
   const res = await authenticatedFetch(`${PAYPAL_SERVICE_URL}/api/paypal/capture`, {
     method: "POST",

@@ -5,28 +5,38 @@ import { CartItem, CustomerInfo, InvoiceLineItem } from "@/types";
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as {
-      items: CartItem[];
+      items?: CartItem[];
+      cart?: CartItem[];
+      lineItems?: InvoiceLineItem[];
       customer: CustomerInfo;
+      amount?: number;
       currency?: string;
       dueDays?: number;
     };
 
-    if (!body.items || body.items.length === 0) {
-      return NextResponse.json({ error: "Shopping cart is empty" }, { status: 400 });
-    }
-
-    const total = body.items.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+    const cartList = body.items || body.cart || [];
     const currency = body.currency || "USD";
     const dueDays = body.dueDays ?? 15;
 
-    const lineItems: InvoiceLineItem[] = body.items.map((i) => ({
-      description: `${i.product.name}${
-        i.product.category === "subscription_notes" ? " [Notes Subscription Pass]" : ""
-      }`,
-      quantity: i.quantity,
-      unitPrice: i.product.price,
-      isSubscription: i.product.category === "subscription_notes",
-    }));
+    let lineItems: InvoiceLineItem[] = [];
+    let total = 0;
+
+    if (cartList.length > 0) {
+      total = cartList.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+      lineItems = cartList.map((i) => ({
+        description: `${i.product.name}${
+          i.product.category === "subscription_notes" ? " [Notes Subscription Pass]" : ""
+        }`,
+        quantity: i.quantity,
+        unitPrice: i.product.price,
+        isSubscription: i.product.category === "subscription_notes",
+      }));
+    } else if (body.lineItems && body.lineItems.length > 0) {
+      lineItems = body.lineItems;
+      total = body.amount ?? lineItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+    } else {
+      return NextResponse.json({ error: "Shopping cart is empty" }, { status: 400 });
+    }
 
     // 1. Create official PayPal Invoice via Revenue Guardian (payment.lalithdev.tech)
     const invoice = await createPayPalInvoice({
@@ -38,7 +48,7 @@ export async function POST(req: NextRequest) {
     });
 
     // 2. Also initialize PayPal Sandbox Order for direct checkout / capture simulation
-    const itemSummary = body.items.map((i) => `${i.product.name} (x${i.quantity})`).join(", ");
+    const itemSummary = lineItems.map((li) => `${li.description} (x${li.quantity})`).join(", ");
     let orderId: string | undefined;
     let approvalLink: string | null = null;
     try {

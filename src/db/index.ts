@@ -31,3 +31,4 @@ export async function pingDatabase(): Promise<{ ok: boolean; latencyMs: number; 
     };
   }
 }
+

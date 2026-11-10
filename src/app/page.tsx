@@ -237,6 +237,7 @@ export default function HomePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           customer,
+          items: cart,
           amount: parseFloat(totalAmount.toFixed(2)),
           currency: "USD",
           dueDays: 15,
@@ -316,7 +317,7 @@ export default function HomePage() {
 
   // Step 2B: Decline Simulation for demonstrating Revenue Guardian
   const handleExecutePayment = async (
-    mockCode?: "INSTRUMENT_DECLINED" | "TRANSACTION_REFUSED" | "NONE"
+    mockCode?: "INSTRUMENT_DECLINED" | "TRANSACTION_REFUSED" | "SIMULATE_SUCCESS" | "NONE"
   ) => {
     if (!currentInvoice?.orderId) return;
 

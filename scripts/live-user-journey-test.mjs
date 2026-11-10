@@ -141,14 +141,14 @@ async function runLiveUserJourney() {
     await page.waitForSelector("text=My Owned Items & Subscriptions", { timeout: 20000 });
     console.log("   ✓ Payment settled! User seamlessly transitioned to 'My Vault & Subscriptions'");
 
-    // 10. Test Policy Refund 1: Under $25 (Auto-Approved)
-    console.log("TEST 10: Testing Auto-Refund under $25 ceiling ($14.99 item)...");
+    // 10. Test Policy Refund 1: Under $25 (Approved & Settled)
+    console.log("TEST 10: Testing Policy Refund under limit ($14.99 item)...");
     const csVaultCard = page.locator(".glass-card", { hasText: "Computer Science" });
     await csVaultCard.getByRole("button", { name: "Cancel & Request Refund" }).first().click();
     await page.waitForSelector("text=Confirm Cancellation");
     await page.click("button:has-text('Submit Cancellation')");
-    await page.waitForSelector("text=Auto-Refund Approved & Settled", { timeout: 60000 });
-    console.log("   ✓ Item under $25.00 auto-approved and refunded per store policy!");
+    await page.waitForSelector("text=Refund Approved & Settled", { timeout: 60000 });
+    console.log("   ✓ Item under limit approved and refunded per policy!");
 
     // 11. Test Policy Refund 2: Over $25 (Awaiting Approval)
     console.log("TEST 11: Testing Approval Request over $25 ceiling ($34.00 Backpack)...");
