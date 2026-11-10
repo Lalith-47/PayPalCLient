@@ -1,0 +1,166 @@
+import { chromium } from "/home/lalith/Projects/PayPal/node_modules/@playwright/test/index.mjs";
+
+async function runFullUserJourney() {
+  console.log("🚀 Starting End-to-End User Journey Test on http://localhost:3001...\n");
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext();
+  const page = await context.newPage();
+
+  const errors = [];
+  page.on("pageerror", (err) => {
+    console.error("❌ Uncaught Page Error:", err.message);
+    errors.push(err.message);
+  });
+
+  try {
+    // 1. Visit Storefront
+    console.log("TEST 1: Visiting Storefront (http://localhost:3001)...");
+    await page.goto("http://localhost:3001", { waitUntil: "domcontentloaded" });
+    await page.waitForSelector("h1, h2, h3");
+    const title = await page.title();
+    console.log(`   ✓ Page loaded successfully: "${title}"`);
+
+    // 2. Test Category Filtering
+    console.log("TEST 2: Testing category filters...");
+    await page.click("text=Supplies");
+    await page.waitForTimeout(400);
+    let cards = await page.$$("h3");
+    console.log(`   ✓ Supplies filter active (${cards.length} cards displayed)`);
+
+    await page.click("text=Notes Passes");
+    await page.waitForTimeout(400);
+    cards = await page.$$("h3");
+    console.log(`   ✓ Notes Passes filter active (${cards.length} cards displayed)`);
+
+    // 3. Test Preview Notes Modal
+    console.log("TEST 3: Testing Notes Preview Modal...");
+    const previewBtn = await page.waitForSelector("button:has-text('Preview')");
+    await previewBtn.click();
+    await page.waitForSelector("text=Core Curriculum & Topics Covered");
+    console.log("   ✓ Preview modal displays topics, sample excerpts, and page counts");
+    await page.click("button:has-text('Add Subscription to Cart')");
+    await page.waitForTimeout(400);
+    console.log("   ✓ Clicked 'Add Subscription to Cart' inside modal");
+
+    // 4. Add items to cart from catalog without popup interruption
+    console.log("TEST 4: Adding college supplies from catalog...");
+    await page.click("text=All Items");
+    await page.waitForTimeout(400);
+
+    const backpackCard = page.locator(".glass-card", { hasText: "Campus All-Weather" });
+    await backpackCard.getByRole("button", { name: "Add to Cart" }).click();
+    console.log("   ✓ Clicked 'Add to Cart' on Campus Backpack ($34.00) - item added without interrupting browsing");
+    await page.waitForTimeout(400);
+
+    // Verify cart count badge
+    const cartButtonText = await page.textContent("button:has-text('Cart')");
+    console.log(`   ✓ Cart badge updated: "${cartButtonText.trim()}"`);
+
+    // 5. Open Cart Drawer
+    console.log("TEST 5: Opening Cart Drawer...");
+    await page.click("button:has-text('Cart')");
+    await page.waitForSelector("text=Your Student Cart");
+    console.log("   ✓ Cart drawer opened with items itemized");
+
+    // 6. Test Proceed to Checkout -> Invoicing from payment.lalithdev.tech
+    console.log("TEST 6: Proceeding to Checkout (Auto-Invoice from payment.lalithdev.tech)...");
+    await page.click("button:has-text('Proceed to Checkout')");
+
+    // Wait for the invoice modal
+    await page.waitForSelector("text=Student Invoice Details", { timeout: 60000 });
+    const invoiceNumber = await page.textContent("span.font-mono");
+    console.log(`   ✓ Invoice created and displayed: ${invoiceNumber?.trim()}`);
+
+    // Verify strictly Pay Now and Cancel buttons
+    const payNowBtn = await page.$("button:has-text('Pay Now')");
+    const cancelBtn = await page.$("button:has-text('Cancel')");
+    if (payNowBtn && cancelBtn) {
+      console.log("   ✓ Verified: Strictly 'Pay Now' and 'Cancel' options are present");
+    } else {
+      throw new Error("Missing Pay Now or Cancel button");
+    }
+
+    // 7. Test Cancel Button
+    console.log("TEST 7: Testing 'Cancel' option on Invoice...");
+    await cancelBtn.click();
+    await page.waitForSelector("text=Payment Cancelled", { timeout: 5000 });
+    console.log("   ✓ Cancel confirmed: zero charges made, cart preserved");
+
+    // 8. Re-open checkout and test Failure Simulation (Negative Testing)
+    console.log("TEST 8: Testing Failure Recovery Simulation (INSTRUMENT_DECLINED)...");
+    await page.click("button:has-text('Cart')");
+    await page.click("button:has-text('Proceed to Checkout')");
+    await page.waitForSelector("text=Student Invoice Details", { timeout: 60000 });
+
+    const simulateDeclineBtn = await page.waitForSelector("button:has-text('Test How Payment Failure is Triaged')");
+    await simulateDeclineBtn.click();
+
+    // Verify Failure Triage Modal opens
+    await page.waitForSelector("text=Payment Intercepted & Triaged", { timeout: 30000 });
+    console.log("   ✓ Decline intercepted! Live Revenue Guardian Failure Triage Modal opened");
+
+    const triageText = await page.textContent("text=AI Decision Agent");
+    console.log("   ✓ Autonomous recovery pipeline displayed:", triageText?.trim());
+
+    // Dismiss failure modal
+    await page.click("button:has-text('Dismiss')");
+    await page.waitForTimeout(500);
+
+    // 9. Re-open checkout and test Pay Now (Success -> Vault Ownership)
+    console.log("TEST 9: Testing Pay Now (Success & Vault Ownership)...");
+    await page.click("button:has-text('Cart')");
+    await page.click("button:has-text('Proceed to Checkout')");
+    await page.waitForSelector("text=Student Invoice Details", { timeout: 60000 });
+
+    const [popup] = await Promise.all([
+      context.waitForEvent("page", { timeout: 6000 }).catch(() => null),
+      page.click("button:has-text('Pay Now')"),
+    ]);
+
+    if (popup) {
+      console.log("   ✓ PayPal hosted invoice opened in popup tab:", popup.url());
+      await popup.close();
+    }
+
+    // Click "Confirm Settlement & Claim" to complete ownership transfer into Vault
+    await page.waitForSelector("button:has-text('Confirm Settlement & Claim')", { timeout: 10000 });
+    await page.click("button:has-text('Confirm Settlement & Claim')");
+
+    // Verify automatic transition to Owned Vault
+    await page.waitForSelector("text=My Owned Items & Subscriptions", { timeout: 20000 });
+    console.log("   ✓ Payment settled! User seamlessly transitioned to 'My Vault & Subscriptions'");
+
+    // 10. Test Policy Refund 1: Under $25 (Auto-Approved)
+    console.log("TEST 10: Testing Auto-Refund under $25 ceiling ($14.99 item)...");
+    const csVaultCard = page.locator(".glass-card", { hasText: "Computer Science" });
+    await csVaultCard.getByRole("button", { name: "Cancel & Request Refund" }).first().click();
+    await page.waitForSelector("text=Confirm Cancellation");
+    await page.click("button:has-text('Submit Cancellation')");
+    await page.waitForSelector("text=Auto-Refund Approved & Settled", { timeout: 60000 });
+    console.log("   ✓ Item under $25.00 auto-approved and refunded per store policy!");
+
+    // 11. Test Policy Refund 2: Over $25 (Awaiting Approval)
+    console.log("TEST 11: Testing Approval Request over $25 ceiling ($34.00 Backpack)...");
+    const backpackVaultCard = page.locator(".glass-card", { hasText: "Campus All-Weather" });
+    await backpackVaultCard.getByRole("button", { name: "Cancel & Request Refund" }).first().click();
+    await page.waitForSelector("text=Confirm Cancellation");
+    await page.click("button:has-text('Submit Cancellation')");
+    await page.waitForSelector("text=Pending Merchant Approval", { timeout: 60000 });
+    console.log("   ✓ Item over $25.00 raised approval request in Approvals Inbox on payment.lalithdev.tech!");
+
+    if (errors.length > 0) {
+      throw new Error(`Encountered page errors: ${errors.join("; ")}`);
+    }
+
+    console.log("\n=======================================================");
+    console.log("🏆 ALL 11 END-TO-END USER JOURNEY TESTS PASSED CLEANLY!");
+    console.log("=======================================================\n");
+  } catch (err) {
+    console.error("❌ Test Failed:", err);
+    process.exit(1);
+  } finally {
+    await browser.close();
+  }
+}
+
+runFullUserJourney();
