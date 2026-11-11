@@ -1,4 +1,4 @@
-import { CustomerInfo, InvoiceDetails, InvoiceLineItem } from "@/types";
+import type { CustomerInfo, InvoiceDetails, InvoiceLineItem } from "../types";
 
 let cachedSessionCookie: string | null = null;
 let cookieExpiresAt: number = 0;
@@ -54,7 +54,7 @@ export async function getRevenueGuardianSession(forceRefresh = false): Promise<s
 /**
  * Authenticated fetch helper that retries once on 401 Unauthorized with a fresh session.
  */
-async function authenticatedFetch(url: string, init: RequestInit = {}): Promise<Response> {
+export async function authenticatedFetch(url: string, init: RequestInit = {}): Promise<Response> {
   let cookie = await getRevenueGuardianSession();
   const headers = new Headers(init.headers || {});
   headers.set("Origin", PAYPAL_SERVICE_URL);

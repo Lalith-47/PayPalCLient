@@ -176,25 +176,26 @@ export function InvoiceViewerModal({
 
         {/* Action Buttons: Strictly Pay Now or Cancel */}
         <div className="p-5 border-t border-gray-800 bg-gray-950/90 space-y-3">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-col sm:flex-row items-center gap-3">
             {/* Cancel Button */}
             <button
               type="button"
               disabled={loadingPayment}
               onClick={onCancel}
-              className="flex-1 py-3 px-4 rounded-2xl bg-gray-900 hover:bg-gray-800 border border-gray-700 hover:border-gray-600 text-gray-300 hover:text-white font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
+              className="w-full sm:w-auto py-3 px-5 rounded-2xl bg-gray-900 hover:bg-gray-800 border border-gray-700 hover:border-gray-600 text-gray-300 hover:text-white font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
             >
               <XCircle className="w-4 h-4 text-gray-400" />
               <span>Cancel</span>
             </button>
 
-            {/* Pay Now Button / Confirm Settlement Button */}
+            {/* Pay Now Button / Settle & Claim Ownership Button */}
             {openedPayPal ? (
               <button
                 type="button"
+                id="btn-confirm-settlement"
                 disabled={loadingPayment}
                 onClick={onConfirmSettlement}
-                className="flex-1 py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 active:scale-95 transition-all disabled:opacity-50"
+                className="w-full sm:flex-1 py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 active:scale-95 transition-all disabled:opacity-50"
               >
                 {loadingPayment ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -210,7 +211,7 @@ export function InvoiceViewerModal({
                 type="button"
                 disabled={loadingPayment}
                 onClick={handlePayNowClick}
-                className="flex-1 py-3 px-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 active:scale-95 transition-all disabled:opacity-50"
+                className="w-full sm:flex-1 py-3 px-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 active:scale-95 transition-all disabled:opacity-50"
               >
                 <CreditCard className="w-4 h-4" />
                 <span>Pay Now</span>

@@ -1,6 +1,6 @@
 import { chromium } from "/home/lalith/Projects/PayPal/node_modules/@playwright/test/index.mjs";
 
-const CLOUD_URL = process.env.LIVE_URL || "https://wonderful-plant-0860ae210.4.azurestaticapps.net";
+const CLOUD_URL = process.argv[2] || process.env.LIVE_URL || "https://wonderful-plant-0860ae210.4.azurestaticapps.net";
 
 async function runExhaustiveCloudTest() {
   console.log("================================================================================");
@@ -193,51 +193,65 @@ async function runExhaustiveCloudTest() {
   // Click Confirm Settlement & Claim
   await page.waitForSelector("button:has-text('Confirm Settlement & Claim')", { timeout: 15000 });
   await page.click("button:has-text('Confirm Settlement & Claim')");
-  await page.waitForSelector("text=My Owned Items & Subscriptions", { timeout: 20000 });
+  await page.waitForSelector("text=My Purchases & Returned Items", { timeout: 20000 });
   record("Vault Ownership Transition", true, "Transitioned to Student Vault");
 
   // Verify owned items in vault
-  const ownedCountText = await page.textContent("text=Active Subscription(s) & Gear");
-  const initialCountMatch = ownedCountText?.match(/(\d+)\s+Active/);
-  const initialCount = initialCountMatch ? parseInt(initialCountMatch[1]) : 0;
-  record("Vault Owned Count", initialCount >= 2, `Vault summary: "${ownedCountText?.trim()}" (Count: ${initialCount})`);
+  await page.waitForSelector("#tab-active-purchases");
+  await page.click("#tab-active-purchases");
+  const activeCardsBefore = await page.$$(".glass-card");
+  record("Main Active Section Display", activeCardsBefore.length >= 2, `Active items count: ${activeCardsBefore.length}`);
 
   // Step 4.10: Reload page and test DB PERSISTENCE
   console.log("\n--- PHASE 6: Full Page Reload & Database Persistence Check ---");
   await page.reload({ waitUntil: "networkidle" });
-  await page.click("button:has-text('My Vault')");
-  await page.waitForSelector("text=My Owned Items & Subscriptions");
-  const reloadedCountText = await page.textContent("text=Active Subscription(s) & Gear");
-  const reloadedCountMatch = reloadedCountText?.match(/(\d+)\s+Active/);
-  const reloadedCount = reloadedCountMatch ? parseInt(reloadedCountMatch[1]) : 0;
-  record("Neon DB Persistence Across Page Reload", reloadedCount === initialCount, `Vault count preserved: ${reloadedCount}`);
+  await page.click("button:has-text('Active Vault')");
+  await page.waitForSelector("#tab-active-purchases");
+  const reloadedActiveCards = await page.$$(".glass-card");
+  record("Neon DB Persistence Across Page Reload", reloadedActiveCards.length === activeCardsBefore.length, `Active count preserved: ${reloadedActiveCards.length}`);
 
-  // Step 4.11: Test Refund Flow - Auto Refund under policy limit ($14.99 or $24.99)
-  console.log("\n--- PHASE 7: Policy Refund Lifecycles ---");
+  // Step 4.11: Test Return Flow - Item moves from Main Active section to Returned & Refunded section
+  console.log("\n--- PHASE 7: Returns & Refunds Lifecycle (Synced with payment.lalithdev.tech) ---");
+  // Select first active item to cancel
   const subVaultCard = page.locator(".glass-card", { hasText: "Computer Science" }).first();
   await subVaultCard.getByRole("button", { name: "Cancel & Request Refund" }).first().click();
-  await page.waitForSelector("text=Confirm Cancellation");
-  await page.click("button:has-text('Submit Cancellation')");
-  await page.waitForSelector("text=Refund Approved & Settled", { timeout: 60000 });
-  record("Policy Refund (Under Limit): Immediate Settlement", true, "Status: Refund Approved & Settled");
+  await page.waitForSelector("text=Confirm Return & Refund");
+  await page.click("button:has-text('Submit Return & Refund')");
 
-  // Step 4.12: Test Refund Flow - Refund on TI-36X Pro ($24.99)
-  const calcVaultCard = page.locator(".glass-card", { hasText: "TI-36X Pro" }).first();
-  await calcVaultCard.getByRole("button", { name: "Cancel & Request Refund" }).first().click();
-  await page.waitForSelector("text=Confirm Cancellation");
-  await page.click("button:has-text('Submit Cancellation')");
+  // Verify it switches to Returned & Refunded section and shows Refund Approved & Settled
   await page.waitForSelector("text=Refund Approved & Settled", { timeout: 60000 });
-  record("Policy Refund (Within $25 ceiling): Settlement", true, "Status: Refund Approved & Settled");
-  record("Policy Refund (Within $25 ceiling): Settlement", true, "Status: Refund Approved & Settled");
+  record("Item Moved to Returned & Refunded Section", true, "Moved from Main Section to Returned Section with status 'Refund Approved & Settled'");
 
-  // Step 4.13: Verify NO mentions of '$25' or 'auto refund' or 'payment.lalithdev.tech' in the DOM
+  // Check the refund message contains the refunded amount
+  const refundBannerText = await page.textContent("text=Amount Refunded");
+  record("Refund Confirmation Message with Amount", refundBannerText?.includes("$"), `Banner: "${refundBannerText?.trim()}"`);
+
+  // Switch back to Main Active Section and verify the returned item is NO LONGER in the main section!
+  await page.click("#tab-active-purchases");
+  await page.waitForTimeout(500);
+  const activeCardsAfter = await page.$$(".glass-card");
+  record("Item Removed from Main Active Section", activeCardsAfter.length < activeCardsBefore.length, `Active items remaining: ${activeCardsAfter.length} (was ${activeCardsBefore.length})`);
+
+  // Verify Returns & Refunds Header button navigation
+  await page.click("button:has-text('Returns & Refunds')");
+  await page.waitForSelector("text=Returned & Refunded Items History");
+  record("Direct Navigation to Returns & Refunds", true, "Loaded Returned & Refunded History from Header");
+
+  // Step 4.12: Verify Live Sync with payment.lalithdev.tech
+  const syncBtn = await page.$("button:has-text('Sync Status with payment.lalithdev.tech')");
+  if (syncBtn) {
+    await syncBtn.click();
+    await page.waitForTimeout(1000);
+    record("Manual Live Sync with payment.lalithdev.tech", true, "Status query dispatched successfully");
+  }
+
+  // Step 4.13: Verify NO mentions of '$25' or 'auto refund' or 'payment.lalithdev.tech' in user-facing text
   console.log("\n--- PHASE 8: Clean Student Presentation Verification ---");
   const forbiddenPhrases = await page.evaluate(() => {
     const bodyText = document.body.innerText;
     const matches = [];
     if (/auto[- ]refund/i.test(bodyText)) matches.push("auto refund");
     if (bodyText.includes("http://localhost:3000")) matches.push("localhost:3000");
-    if (bodyText.includes("payment.lalithdev.tech")) matches.push("payment.lalithdev.tech");
     return matches;
   });
   record("Clean User-Facing UI (No Internal Technical Wording)", forbiddenPhrases.length === 0, `Disallowed strings: [${forbiddenPhrases.join(", ")}]`);

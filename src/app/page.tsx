@@ -30,7 +30,7 @@ import {
 } from "lucide-react";
 
 export default function HomePage() {
-  const [currentView, setCurrentView] = useState<"store" | "vault">("store");
+  const [currentView, setCurrentView] = useState<"store" | "vault" | "returns">("store");
   const [activeCategory, setActiveCategory] = useState<"all" | "essentials" | "subscription_notes">("all");
   const [productsList, setProductsList] = useState<Product[]>(PRODUCTS);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -93,6 +93,102 @@ export default function HomePage() {
   } | null>(null);
 
   const [cancellationNotice, setCancellationNotice] = useState<string | null>(null);
+  const [isSyncingStatus, setIsSyncingStatus] = useState(false);
+
+  // Auto-sync pending refund decisions from payment.lalithdev.tech
+  useEffect(() => {
+    const hasPending = ownedItems.some((i) => i.status === "AWAITING_APPROVAL");
+    if (!hasPending || !sessionId) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch("/api/refunds/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId }),
+        });
+        const data = await res.json();
+        if (data.newlyApproved && data.newlyApproved.length > 0) {
+          setOwnedItems((prev) =>
+            prev.map((item) => {
+              const approved = data.newlyApproved.find(
+                (a: any) => a.itemId === item.id || a.orderId === item.orderId
+              );
+              if (approved) {
+                return {
+                  ...item,
+                  status: "REFUNDED",
+                  refundMessage: approved.message,
+                };
+              }
+              return item;
+            })
+          );
+
+          const total = data.newlyApproved.reduce(
+            (s: number, a: any) => s + (a.amountPaid || 0),
+            0
+          );
+          setSuccessDetails({
+            message: `Refund Approved: $${total.toFixed(2)} USD was approved by store management on payment.lalithdev.tech and refunded to your PayPal account.`,
+          });
+        }
+      } catch (err) {
+        console.warn("[Auto-Sync error]:", err);
+      }
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [ownedItems, sessionId]);
+
+  // Manual status check with payment.lalithdev.tech
+  const handleManualSyncStatus = async () => {
+    setIsSyncingStatus(true);
+    try {
+      const res = await fetch("/api/refunds/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      });
+      const data = await res.json();
+      if (data.newlyApproved && data.newlyApproved.length > 0) {
+        setOwnedItems((prev) =>
+          prev.map((item) => {
+            const approved = data.newlyApproved.find(
+              (a: any) => a.itemId === item.id || a.orderId === item.orderId
+            );
+            if (approved) {
+              return {
+                ...item,
+                status: "REFUNDED",
+                refundMessage: approved.message,
+              };
+            }
+            return item;
+          })
+        );
+        const total = data.newlyApproved.reduce(
+          (s: number, a: any) => s + (a.amountPaid || 0),
+          0
+        );
+        setSuccessDetails({
+          message: `Refund Approved: $${total.toFixed(2)} USD was approved by store management on payment.lalithdev.tech and refunded to your PayPal account.`,
+        });
+      } else {
+        const stillPending = ownedItems.filter((i) => i.status === "AWAITING_APPROVAL").length;
+        if (stillPending > 0) {
+          setCartToast("Checked payment.lalithdev.tech: Return request is still awaiting manager review.");
+        } else {
+          setCartToast("All refund records are currently in sync with payment.lalithdev.tech.");
+        }
+        setTimeout(() => setCartToast(null), 3000);
+      }
+    } catch (err) {
+      alert("Failed to sync with payment.lalithdev.tech: " + (err as Error).message);
+    } finally {
+      setIsSyncingStatus(false);
+    }
+  };
 
   // Initialize Session & Neon DB Data Fetching
   useEffect(() => {
@@ -400,8 +496,9 @@ export default function HomePage() {
           )
         );
         setSuccessDetails({
-          message: `Cancellation Approved: Refund of $${item.amountPaid.toFixed(2)} has been processed and credited to your original payment method.`,
+          message: `Cancellation Approved: Refund of $${item.amountPaid.toFixed(2)} has been processed and credited to your original payment method. Item moved to Returned & Refunded section.`,
         });
+        setCurrentView("returns");
       } else {
         setOwnedItems((prev) =>
           prev.map((i) =>
@@ -417,8 +514,9 @@ export default function HomePage() {
           )
         );
         setCancellationNotice(
-          `Return Request Submitted: Your refund request of $${item.amountPaid.toFixed(2)} has been submitted. Our team is reviewing it and will update your status.`
+          `Return Request Submitted: Your refund request of $${item.amountPaid.toFixed(2)} is pending manager review on payment.lalithdev.tech. Item moved to Returned & Refunded section.`
         );
+        setCurrentView("returns");
       }
     } catch (err) {
       alert((err as Error).message);
@@ -448,6 +546,10 @@ export default function HomePage() {
       <Header
         cartCount={cartTotalCount}
         ownedCount={ownedItems.filter((i) => i.status === "ACTIVE").length}
+        returnsCount={
+          ownedItems.filter((i) => i.status === "REFUNDED" || i.status === "AWAITING_APPROVAL")
+            .length
+        }
         onOpenCart={() => setIsCartOpen(true)}
         currentView={currentView}
         onSelectView={setCurrentView}
@@ -577,6 +679,10 @@ export default function HomePage() {
               setActiveCategory("all");
             }}
             refundingItemId={refundingItemId}
+            activeTab={currentView === "returns" ? "returns" : "active"}
+            onTabChange={(tab) => setCurrentView(tab === "returns" ? "returns" : "vault")}
+            onSyncStatus={handleManualSyncStatus}
+            isSyncingStatus={isSyncingStatus}
           />
         )}
       </main>

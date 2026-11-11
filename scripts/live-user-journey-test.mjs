@@ -138,26 +138,28 @@ async function runLiveUserJourney() {
     await page.click("button:has-text('Confirm Settlement & Claim')");
 
     // Verify automatic transition to Owned Vault
-    await page.waitForSelector("text=My Owned Items & Subscriptions", { timeout: 20000 });
-    console.log("   ✓ Payment settled! User seamlessly transitioned to 'My Vault & Subscriptions'");
+    await page.waitForSelector("text=My Purchases & Returned Items", { timeout: 20000 });
+    console.log("   ✓ Payment settled! User seamlessly transitioned to 'My Purchases & Returned Items'");
 
     // 10. Test Policy Refund 1: Under $25 (Approved & Settled)
     console.log("TEST 10: Testing Policy Refund under limit ($14.99 item)...");
-    const csVaultCard = page.locator(".glass-card", { hasText: "Computer Science" });
+    const csVaultCard = page.locator(".glass-card", { hasText: "Computer Science" }).first();
     await csVaultCard.getByRole("button", { name: "Cancel & Request Refund" }).first().click();
-    await page.waitForSelector("text=Confirm Cancellation");
-    await page.click("button:has-text('Submit Cancellation')");
+    await page.waitForSelector("text=Confirm Return & Refund");
+    await page.click("button:has-text('Submit Return & Refund')");
     await page.waitForSelector("text=Refund Approved & Settled", { timeout: 60000 });
-    console.log("   ✓ Item under limit approved and refunded per policy!");
+    console.log("   ✓ Item moved to Returned & Refunded section with status 'Refund Approved & Settled'!");
 
     // 11. Test Policy Refund 2: Over $25 (Awaiting Approval)
     console.log("TEST 11: Testing Approval Request over $25 ceiling ($34.00 Backpack)...");
-    const backpackVaultCard = page.locator(".glass-card", { hasText: "Campus All-Weather" });
+    await page.click("#tab-active-purchases");
+    await page.waitForTimeout(500);
+    const backpackVaultCard = page.locator(".glass-card", { hasText: "Campus All-Weather" }).first();
     await backpackVaultCard.getByRole("button", { name: "Cancel & Request Refund" }).first().click();
-    await page.waitForSelector("text=Confirm Cancellation");
-    await page.click("button:has-text('Submit Cancellation')");
-    await page.waitForSelector("text=Pending Merchant Approval", { timeout: 60000 });
-    console.log("   ✓ Item over $25.00 raised approval request in Approvals Inbox on payment.lalithdev.tech!");
+    await page.waitForSelector("text=Confirm Return & Refund");
+    await page.click("button:has-text('Submit Return & Refund')");
+    await page.waitForSelector("text=Pending Merchant Review", { timeout: 60000 });
+    console.log("   ✓ Item over $25.00 raised approval request on payment.lalithdev.tech and moved to Returned & Refunded section!");
 
     if (errors.length > 0) {
       throw new Error(`Encountered page errors: ${errors.join("; ")}`);

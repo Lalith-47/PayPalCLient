@@ -10,14 +10,16 @@ import {
   BookOpen,
   Layers,
   Archive,
+  RotateCcw,
 } from "lucide-react";
 
 interface HeaderProps {
   cartCount: number;
   ownedCount: number;
+  returnsCount?: number;
   onOpenCart: () => void;
-  currentView: "store" | "vault";
-  onSelectView: (view: "store" | "vault") => void;
+  currentView: "store" | "vault" | "returns";
+  onSelectView: (view: "store" | "vault" | "returns") => void;
   activeCategory: "all" | "essentials" | "subscription_notes";
   onSelectCategory: (cat: "all" | "essentials" | "subscription_notes") => void;
 }
@@ -25,6 +27,7 @@ interface HeaderProps {
 export function Header({
   cartCount,
   ownedCount,
+  returnsCount = 0,
   onOpenCart,
   currentView,
   onSelectView,
@@ -109,10 +112,28 @@ export function Header({
               }`}
             >
               <Archive className="w-3.5 h-3.5 text-purple-400" />
-              <span>My Vault & Subscriptions</span>
+              <span>Active Vault</span>
               {ownedCount > 0 && (
                 <span className="px-1.5 py-0.2 text-[10px] bg-white text-purple-700 font-black rounded-full">
                   {ownedCount}
+                </span>
+              )}
+            </button>
+
+            {/* Returns & Refunds View */}
+            <button
+              onClick={() => onSelectView("returns")}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+                currentView === "returns"
+                  ? "bg-amber-600 text-white shadow-md shadow-amber-600/30"
+                  : "text-amber-300 hover:text-white hover:bg-amber-950/40"
+              }`}
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+              <span>Returns & Refunds</span>
+              {returnsCount > 0 && (
+                <span className="px-1.5 py-0.2 text-[10px] bg-amber-400/20 text-amber-200 border border-amber-400/40 font-black rounded-full">
+                  {returnsCount}
                 </span>
               )}
             </button>
