@@ -68,6 +68,7 @@ export async function POST(req: NextRequest) {
       customerName: string;
       customerEmail: string;
       items: Array<{
+        id?: string;
         productId: string;
         amountPaid?: number;
         price?: number;
@@ -78,8 +79,11 @@ export async function POST(req: NextRequest) {
 
     for (const it of items) {
       const finalAmount = it.amountPaid ?? it.price ?? 0;
+      const orderItemId =
+        it.id ||
+        `ord_${Date.now()}_${Math.random().toString(36).slice(2, 6)}_${it.productId}`;
       await db.insert(orders).values({
-        id: `ord_${Date.now()}_${it.productId}`,
+        id: orderItemId,
         orderId,
         invoiceId: invoiceId || null,
         invoiceNumber: invoiceNumber || null,

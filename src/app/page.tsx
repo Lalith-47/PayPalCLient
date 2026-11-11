@@ -111,8 +111,9 @@ export default function HomePage() {
         if (data.newlyApproved && data.newlyApproved.length > 0) {
           setOwnedItems((prev) =>
             prev.map((item) => {
+              // Match strictly by item.id so unrelated items in the same order are NOT modified
               const approved = data.newlyApproved.find(
-                (a: any) => a.itemId === item.id || a.orderId === item.orderId
+                (a: any) => a.itemId === item.id
               );
               if (approved) {
                 return {
@@ -154,8 +155,9 @@ export default function HomePage() {
       if (data.newlyApproved && data.newlyApproved.length > 0) {
         setOwnedItems((prev) =>
           prev.map((item) => {
+            // Match strictly by item.id so unrelated items in the same order are NOT modified
             const approved = data.newlyApproved.find(
-              (a: any) => a.itemId === item.id || a.orderId === item.orderId
+              (a: any) => a.itemId === item.id
             );
             if (approved) {
               return {
@@ -237,16 +239,8 @@ export default function HomePage() {
       .then((res) => res.json())
       .then((data) => {
         if (data.orders && Array.isArray(data.orders) && data.orders.length > 0) {
-          setOwnedItems((prev) => {
-            const combined = [...data.orders];
-            // keep default samples if none exist
-            for (const item of prev) {
-              if (!combined.some((c) => c.id === item.id)) {
-                combined.push(item);
-              }
-            }
-            return combined;
-          });
+          // Neon DB is the single source of truth for owned items
+          setOwnedItems(data.orders);
         }
       })
       .catch((err) => console.warn("[Orders Fetch]", err));
@@ -366,25 +360,34 @@ export default function HomePage() {
     if (!currentInvoice) return;
     setIsInvoiceModalOpen(false);
 
-    const newOwned: OwnedItem[] = cart.map((ci) => ({
-      id: `own_${Date.now()}_${ci.product.id}`,
-      product: ci.product,
-      orderId: currentInvoice.orderId || `ORD_${Date.now()}`,
-      captureId: `cap_${currentInvoice.invoiceId || Date.now()}`,
-      invoiceId: currentInvoice.invoiceId,
-      purchaseDate: new Date().toISOString().split("T")[0],
-      amountPaid: ci.product.price * ci.quantity,
-      status: "ACTIVE",
-    }));
+    const newOwned: OwnedItem[] = cart.map((ci) => {
+      const uniqueId = `ord_${Date.now()}_${Math.random().toString(36).slice(2, 7)}_${ci.product.id}`;
+      return {
+        id: uniqueId,
+        product: ci.product,
+        orderId: currentInvoice.orderId || `ORD_${Date.now()}`,
+        captureId: `cap_${currentInvoice.invoiceId || Date.now()}`,
+        invoiceId: currentInvoice.invoiceId,
+        purchaseDate: new Date().toISOString().split("T")[0],
+        amountPaid: ci.product.price * ci.quantity,
+        status: "ACTIVE",
+      };
+    });
 
-    setOwnedItems((prev) => [...newOwned, ...prev]);
+    setOwnedItems((prev) => {
+      const cleanPrev = prev.filter(
+        (p) => p.id !== "own-cs-vault-sample" && p.id !== "own-backpack-sample"
+      );
+      return [...newOwned, ...cleanPrev];
+    });
+
     setSuccessDetails({
       orderId: currentInvoice.orderId,
       invoiceNumber: currentInvoice.invoiceNumber,
       message: `Invoice #${currentInvoice.invoiceNumber} settled via PayPal. Purchased items are now accessible in your Owned Vault!`,
     });
 
-    // Persist new orders to Neon DB
+    // Persist new orders to Neon DB with exact same IDs
     fetch("/api/orders", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -395,9 +398,10 @@ export default function HomePage() {
         invoiceNumber: currentInvoice.invoiceNumber,
         customerName: customer.name,
         customerEmail: customer.email,
-        items: cart.map((ci) => ({
-          productId: ci.product.id,
-          amountPaid: ci.product.price * ci.quantity,
+        items: newOwned.map((it) => ({
+          id: it.id,
+          productId: it.product.id,
+          amountPaid: it.amountPaid,
         })),
       }),
     }).catch((err) => console.warn("[Orders Persist Sync]", err));
@@ -457,18 +461,21 @@ export default function HomePage() {
     );
   };
 
-  // Step 3: Cancellation & Refund Flow
-  const handleCancelAndRefund = async (item: OwnedItem, reason: string) => {
-    setRefundingItemId(item.id);
+  // Step 3: Cancellation & Refund Flow (Group / Batch aware)
+  const handleBatchRefund = async (items: OwnedItem[], reason: string) => {
+    if (!items || items.length === 0) return;
+    setRefundingItemId("batch");
     try {
       const res = await fetch("/api/refunds", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          orderId: item.orderId,
-          itemId: item.id,
-          captureId: item.captureId || item.orderId,
-          amount: item.amountPaid,
+          items: items.map((i) => ({
+            id: i.id,
+            orderId: i.orderId,
+            captureId: i.captureId || i.orderId,
+            amount: i.amountPaid,
+          })),
           currency: "USD",
           reason,
           customerEmail: customer.email,
@@ -478,51 +485,63 @@ export default function HomePage() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Failed to submit cancellation refund");
+        throw new Error(data.error || "Failed to submit group return request");
       }
 
-      if (data.decision === "AUTO") {
-        setOwnedItems((prev) =>
-          prev.map((i) =>
-            i.id === item.id
-              ? {
-                  ...i,
-                  status: "REFUNDED",
-                  refundEventId: data.eventId,
-                  refundRule: data.ruleTriggered,
-                  refundMessage: data.message,
-                }
-              : i
-          )
-        );
-        setSuccessDetails({
-          message: `Cancellation Approved: Refund of $${item.amountPaid.toFixed(2)} has been processed and credited to your original payment method. Item moved to Returned & Refunded section.`,
-        });
-        setCurrentView("returns");
-      } else {
-        setOwnedItems((prev) =>
-          prev.map((i) =>
-            i.id === item.id
-              ? {
-                  ...i,
-                  status: "AWAITING_APPROVAL",
-                  refundEventId: data.eventId,
-                  refundRule: data.ruleTriggered,
-                  refundMessage: data.message,
-                }
-              : i
-          )
-        );
-        setCancellationNotice(
-          `Return Request Submitted: Your refund request of $${item.amountPaid.toFixed(2)} is pending manager review on payment.lalithdev.tech. Item moved to Returned & Refunded section.`
-        );
-        setCurrentView("returns");
+      // Map results back by item ID strictly
+      const resultMap = new Map<
+        string,
+        { status: "REFUNDED" | "AWAITING_APPROVAL" | "ERROR"; eventId?: string; message?: string }
+      >();
+      if (data.items && Array.isArray(data.items)) {
+        for (const r of data.items) {
+          resultMap.set(r.id, r);
+        }
       }
+
+      setOwnedItems((prev) =>
+        prev.map((i) => {
+          const resItem = resultMap.get(i.id);
+          if (resItem && resItem.status !== "ERROR") {
+            return {
+              ...i,
+              status: resItem.status,
+              refundEventId: resItem.eventId,
+              refundMessage: resItem.message,
+            };
+          }
+          return i;
+        })
+      );
+
+      const approvedCount = (data.items || []).filter((r: any) => r.status === "REFUNDED").length;
+      const pendingCount = (data.items || []).filter((r: any) => r.status === "AWAITING_APPROVAL").length;
+      const totalAmount = items.reduce((s, it) => s + it.amountPaid, 0);
+
+      if (approvedCount > 0 && pendingCount === 0) {
+        setSuccessDetails({
+          message: `Return Approved: Full refund of $${totalAmount.toFixed(2)} USD for ${approvedCount} item(s) has been processed and credited to your PayPal account.`,
+        });
+      } else if (pendingCount > 0 && approvedCount === 0) {
+        setCancellationNotice(
+          `Return Request Submitted: ${pendingCount} item(s) ($${totalAmount.toFixed(2)} USD) submitted for store management review on payment.lalithdev.tech.`
+        );
+      } else {
+        setSuccessDetails({
+          message: `Return Processed: ${approvedCount} item(s) refunded and ${pendingCount} item(s) awaiting manager review.`,
+        });
+      }
+
+      setCurrentView("returns");
     } catch (err) {
       alert((err as Error).message);
     } finally {
       setRefundingItemId(null);
     }
+  };
+
+  const handleCancelAndRefund = async (item: OwnedItem, reason: string) => {
+    await handleBatchRefund([item], reason);
   };
 
   const filteredProducts =
@@ -673,6 +692,7 @@ export default function HomePage() {
           <MyVaultSection
             ownedItems={ownedItems}
             onCancelAndRefund={handleCancelAndRefund}
+            onBatchRefund={handleBatchRefund}
             onReadNotes={(product) => setPreviewProduct(product)}
             onExploreStore={() => {
               setCurrentView("store");
